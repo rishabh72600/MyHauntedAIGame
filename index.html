@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>My Haunted AI - Full Stack Prototype</title>
+  <!-- TailwindCSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React & ReactDOM CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <!-- Babel CDN for JSX transform -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+
+<body class="bg-gray-900 text-gray-100 font-sans min-h-screen flex flex-col">
+  <div id="root" class="flex-grow container mx-auto p-4 max-w-3xl"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // Mock Orange ID login & token storage (simulate)
+    function useOrangeID() {
+      const [user, setUser] = useState(null);
+
+      // On mount simulate checking localStorage for login
+      useEffect(() => {
+        const storedUser = JSON.parse(localStorage.getItem("orangeIDUser"));
+        if (storedUser) setUser(storedUser);
+      }, []);
+
+      function login() {
+        // Simulate Orange ID login prompt, assign dummy user & tokens
+        const dummyUser = {
+          id: "user_" + Math.floor(Math.random() * 10000),
+          name: "SpookyUser",
+          orngBalance: 150
+        };
+        localStorage.setItem("orangeIDUser", JSON.stringify(dummyUser));
+        setUser(dummyUser);
+      }
+
+      function logout() {
+        localStorage.removeItem("orangeIDUser");
+        setUser(null);
+      }
+
+      function spendORNG(amount) {
+        if (!user || user.orngBalance < amount) return false;
+        const updatedUser = { ...user, orngBalance: user.orngBalance - amount };
+        localStorage.setItem("orangeIDUser", JSON.stringify(updatedUser));
+        setUser(updatedUser);
+        return true;
+      }
+
+      function earnORNG(amount) {
+        if (!user) return false;
+        const updatedUser = { ...user, orngBalance: user.orngBalance + amount };
+        localStorage.setItem("orangeIDUser", JSON.stringify(updatedUser));
+        setUser(updatedUser);
+        return true;
+      }
+
+      return { user, login, logout, spendORNG, earnORNG };
+    }
+
+    // Mock AI story generation function (simulate GPT-4 API)
+    function generateStoryNode(step, choice) {
+      // In real app, call AI API with context/history
+      // Here we simulate with a static branching story structure and random flavor text
+      const baseStory = {
+        0: {
+          text: "You arrive at the eerie mansion's tall gates. The wind carries whispers. Do you dare enter?",
+          choices: [
+            { text: "Enter the mansion", nextStep: 1 },
+            { text: "Turn back into the fog", nextStep: 2 }
+          ]
+        },
+        1: {
+          text: "The door creaks open giving way to darkness inside. Shadows move. A voice calls your name.",
+          choices: [
+            { text: "Answer the voice", nextStep: 3 },
+            { text: "Light a torch and look around", nextStep: 4 }
+          ]
+        },
+        2: {
+          text: "Cowardice? Maybe. But safety for now. The night is long and full of terrors...",
+          choices: [
+            { text: "Return to the gates", nextStep: 0 },
+          ]
+        },
+        3: {
+          text: "You see a ghostly figure pointing down a corridor. Your heart races.",
+          choices: [
+            { text: "Follow the ghost", nextStep: 5 },
+            { text: "Run out screaming", nextStep: 2 }
+          ]
+        },
+        4: {
+          text: "The torch reveals ancient paintings watching your every move.",
+          choices: [
+            { text: "Touch a painting", nextStep: 6 },
+            { text: "Ignore and proceed", nextStep: 5 }
+          ]
+        },
+        5: {
+          text: "A trapdoor opens beneath you! You fall into darkness... Is this the end?",
+          choices: [
+            { text: "Try to find a way out", nextStep: 7 },
+            { text: "Accept your fate", nextStep: 8 }
+          ]
+        },
+        6: {
+          text: "The painting comes to life! You gain insight but lose a token of your sanity.",
+          choices: [
+            { text: "Continue forward", nextStep: 5 }
+          ],
+          orngCost: 10 // special cost choice to unlock
+        },
+        7: {
+          text: "You crawl through winding tunnels and find a glowing talisman. You feel empowered.",
+          choices: [
+            { text: "Use talisman", nextStep: 9 },
+            { text: "Leave it be", nextStep: 8 }
+          ],
+          orngReward: 20
+        },
+        8: {
+          text: "The story ends here, but the mansion will remember your fear.",
+          choices: []
+        },
+        9: {
+          text: "Empowered by the talisman, you banish the evil spirits and escape the mansion victorious!",
+          choices: []
+        }
+      };
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          let node = baseStory[step];
+          // For special cost node, check if allowed
+          if(node?.orngCost && choice === undefined){
+            node.text += " (Consumes ORNG tokens)";
+          }
+          resolve(node);
+        }, 500 + Math.random() * 500);
+      });
+    }
+
+    // Save/load game state by orangeID user
+    function saveGameState(userId, state) {
+      if (!userId) return;
+      localStorage.setItem(`hauntedAI_state_${userId}`, JSON.stringify(state));
+    }
+
+    function loadGameState(userId) {
+      if (!userId) return null;
+      const stateStr = localStorage.getItem(`hauntedAI_state_${userId}`);
+      if (!stateStr) return null;
+      try {
+        return JSON.parse(stateStr);
+      } catch {
+        return null;
+      }
+    }
+
+    // Application Component
+    function HauntedAIApp() {
+      const { user, login, logout, spendORNG, earnORNG } = useOrangeID();
+
+      const [storyStep, setStoryStep] = useState(0);
+      const [storyNode, setStoryNode] = useState(null);
+      const [history, setHistory] = useState([]);
+      const [loadingNode, setLoadingNode] = useState(false);
+      const [gameOver, setGameOver] = useState(false);
+      const [fearProfile, setFearProfile] = useState("Calm but Curious");
+      const [message, setMessage] = useState(null);
+
+      // Load saved game state on login
+      useEffect(() => {
+        if (user) {
+          const saved = loadGameState(user.id);
+          if (saved) {
+            setStoryStep(saved.storyStep);
+            setHistory(saved.history);
+            setFearProfile(saved.fearProfile);
+            setGameOver(saved.gameOver);
+          } else {
+            resetGame();
+          }
+        } else {
+          resetGame();
+        }
+      }, [user]);
+
+      // Fetch story node on step change
+      useEffect(() => {
+        if (gameOver) return;
+        setLoadingNode(true);
+        generateStoryNode(storyStep).then((node) => {
+          setStoryNode(node);
+          setLoadingNode(false);
+        });
+      }, [storyStep, gameOver]);
+
+      // Save game state on changes
+      useEffect(() => {
+        if (user) {
+          saveGameState(user.id, { storyStep, history, fearProfile, gameOver });
+        }
+      }, [user, storyStep, history, fearProfile, gameOver]);
+
+      function resetGame() {
+        setStoryStep(0);
+        setHistory([]);
+        setGameOver(false);
+        setFearProfile("Calm but Curious");
+        setStoryNode(null);
+        setMessage(null);
+      }
+
+      async function onChoose(choice) {
+        if (!storyNode) return;
+
+        // If current node requires ORNG to proceed (cost)
+        if (storyNode.orngCost) {
+          if (!user || user.orngBalance < storyNode.orngCost) {
+            setMessage(`You need ${storyNode.orngCost} ORNG tokens to make this choice.`);
+            return;
+          }
+          // Deduct tokens
+          const success = spendORNG(storyNode.orngCost);
+          if (!success) {
+            setMessage("Failed to spend ORNG tokens.");
+            return;
+          }
+          setMessage(`Spent ${storyNode.orngCost} ORNG tokens to proceed.`);
+        }
+        // If current node gives ORNG reward
+        if (storyNode.orngReward) {
+          earnORNG(storyNode.orngReward);
+          setMessage(`You earned ${storyNode.orngReward} ORNG tokens!`);
+        }
+
+        setHistory(prev => [...prev, { step: storyStep, choice: choice.text }]);
+        setStoryStep(choice.nextStep);
+
+        if (baseStoryEndsAt(choice.nextStep)) {
+          setGameOver(true);
+        }
+      }
+
+      // Helper: check if story end node
+      function baseStoryEndsAt(step) {
+        // node without choices considered ending
+        // Using static storyNodes from generateStoryNode for demo
+        const endingSteps = [8, 9];
+        return endingSteps.includes(step);
+      }
+
+      function onStartNew() {
+        resetGame();
+        setGameOver(false);
+      }
+
+      function onLogout() {
+        logout();
+      }
+
+      // Compose Fear Profile based on choices - simple demo logic
+      useEffect(() => {
+        if (history.length === 0) return;
+        const braveChoices = history.filter(h => ["Enter the mansion", "Answer the voice", "Follow the ghost", "Use talisman"].some(a => h.choice.includes(a))).length;
+        if (braveChoices > 2) {
+          setFearProfile("Brave Explorer");
+        } else if (braveChoices > 0) {
+          setFearProfile("Cautious Wanderer");
+        } else {
+          setFearProfile("Fearful Fawn");
+        }
+      }, [history]);
+
+      return (
+        <div className="flex flex-col h-full">
+          {/* Header */}
+          <header className="flex justify-between items-center p-4 bg-gray-800 rounded-md mb-4">
+            <h1 className="text-3xl text-orange-500 font-extrabold">My Haunted AI</h1>
+            {user ?
+              <div className="flex items-center space-x-4 text-sm text-gray-300">
+                <span>Signed in as <strong>{user.name}</strong></span>
+                <span>ORNG: <strong>{user.orngBalance}</strong></span>
+                <button onClick={onLogout} className="bg-red-600 hover:bg-red-700 px-2 py-1 rounded">Logout</button>
+              </div> :
+              <button onClick={login} className="bg-orange-600 hover:bg-orange-700 px-4 py-2 rounded">Login with Orange ID</button>
+            }
+          </header>
+
+          {!user && <p className="text-center text-gray-400 mt-12 text-lg">Please login with Orange ID to start your haunted story adventure.</p>}
+
+          {user && !gameOver && storyNode && (
+            <main className="flex flex-col flex-grow bg-gray-800 rounded-md p-6 shadow-lg">
+              <div className="mb-4 text-xl min-h-[100px]">{loadingNode ? "Loading story..." : storyNode.text}</div>
+
+              {message && <div className="bg-red-700 text-red-200 p-2 rounded mb-3">{message}</div>}
+
+              <div className="space-y-2">
+                {storyNode.choices.map((choice, i) => (
+                  <button
+                    key={i}
+                    onClick={() => onChoose(choice)}
+                    className="w-full bg-orange-600 hover:bg-orange-700 p-3 rounded text-left"
+                    disabled={loadingNode}
+                  >
+                    {choice.text} {storyNode.orngCost ? `(Costs ${storyNode.orngCost} ORNG)` : ""}
+                  </button>
+                ))}
+                {storyNode.choices.length === 0 &&
+                  <button
+                    onClick={() => setGameOver(true)}
+                    className="w-full bg-gray-600 hover:bg-gray-700 p-3 rounded"
+                  >
+                    End Story
+                  </button>
+                }
+              </div>
+
+              <section className="mt-auto p-4 bg-gray-900 rounded-lg mt-8">
+                <h2 className="font-bold text-orange-400 mb-2">Your Fear Profile:</h2>
+                <p className="text-gray-300">{fearProfile}</p>
+              </section>
+            </main>
+          )}
+
+          {user && gameOver && (
+            <main className="bg-gray-800 rounded-md p-6 shadow-lg">
+              <h2 className="text-2xl text-orange-500 mb-4 font-extrabold">The End</h2>
+              <p className="mb-4">Your haunted story has ended. Here's a summary of your journey:</p>
+              <ul className="list-disc list-inside mb-4 max-h-48 overflow-auto">
+                {history.map((h, i) => <li key={i}>"{h.choice}"</li>)}
+              </ul>
+              <button onClick={onStartNew} className="bg-orange-600 hover:bg-orange-700 p-3 rounded w-full">Play Again</button>
+            </main>
+          )}
+
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<HauntedAIApp />);
+  </script>
+</body>
+
+</html>
+
